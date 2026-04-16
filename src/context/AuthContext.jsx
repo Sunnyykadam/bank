@@ -8,64 +8,37 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const mountedRef = useRef(true)
-  const loadingDone = useRef(false)
-
-  const finishLoading = () => {
-    if (!loadingDone.current && mountedRef.current) {
-      loadingDone.current = true
-      setLoading(false)
-    }
-  }
+  const sessionActive = useRef(false)
 
   useEffect(() => {
     mountedRef.current = true
-    loadingDone.current = false
 
-    // Hard safety net — never wait more than 3 seconds
-    const timeout = setTimeout(finishLoading, 3000)
-
-    const initAuth = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession()
-        if (!mountedRef.current) return
-        if (error) {
-          finishLoading()
-          return
-        }
-        if (session?.user) {
-          setUser(session.user)
-          await loadProfile(session.user.id)
-        } else {
-          finishLoading()
-        }
-      } catch (err) {
-        console.error('Auth init error:', err)
-        finishLoading()
-      }
-    }
-
-    initAuth()
+    // No persisted sessions — just mark loading as done immediately
+    // User starts as logged out, login will set the user
+    setLoading(false)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mountedRef.current) return
-        if (session?.user) {
+
+        // Only react to explicit sign-in and sign-out events
+        if (event === 'SIGNED_IN' && session?.user) {
+          sessionActive.current = true
           setUser(session.user)
-          // Handle both first login AND returning with stored session
-          if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
-            await loadProfile(session.user.id)
-          }
-        } else {
+          await loadProfile(session.user.id)
+          if (mountedRef.current) setLoading(false)
+        } else if (event === 'SIGNED_OUT') {
+          sessionActive.current = false
           setUser(null)
           setProfile(null)
-          finishLoading()
         }
+        // Ignore INITIAL_SESSION, TOKEN_REFRESHED, and other events
+        // since we don't persist sessions
       }
     )
 
     return () => {
       mountedRef.current = false
-      clearTimeout(timeout)
       subscription.unsubscribe()
     }
   }, [])
@@ -94,8 +67,6 @@ export function AuthProvider({ children }) {
       }
     } catch (err) {
       console.error('loadProfile error:', err)
-    } finally {
-      finishLoading()
     }
   }
 
@@ -113,16 +84,17 @@ export function AuthProvider({ children }) {
 
   const signIn = async (email, password) => {
     setLoading(true)
-    loadingDone.current = false
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      finishLoading()
+      setLoading(false)
     }
+    // On success, onAuthStateChange SIGNED_IN will fire → sets user + loads profile
     return { data, error }
   }
 
   const signOut = async () => {
     await supabase.auth.signOut()
+    sessionActive.current = false
     setUser(null)
     setProfile(null)
   }
