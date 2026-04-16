@@ -28,7 +28,6 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [shake, setShake] = useState(false)
@@ -61,7 +60,7 @@ export default function Login() {
     setError('')
     setIsLoading(true)
     try {
-      const { data, error: authError } = await signIn(email, password, rememberMe)
+      const { data, error: authError } = await signIn(email, password)
       if (authError) {
         setError(authError.message || 'Invalid credentials')
         setShake(true)
@@ -140,17 +139,7 @@ export default function Login() {
 
           {error && <p className="error-message">{error}</p>}
 
-          <div className="remember-row">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={e => setRememberMe(e.target.checked)}
-              />
-              <span className="checkmark"></span>
-              Remember me
-            </label>
-          </div>
+
 
           <button
             type="submit"

@@ -8,31 +8,39 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const mountedRef = useRef(true)
+  const loadingDone = useRef(false)
+
+  const finishLoading = () => {
+    if (!loadingDone.current && mountedRef.current) {
+      loadingDone.current = true
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     mountedRef.current = true
+    loadingDone.current = false
+
+    // Hard safety net — never wait more than 3 seconds
+    const timeout = setTimeout(finishLoading, 3000)
 
     const initAuth = async () => {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
-        
         if (!mountedRef.current) return
-        
         if (error) {
-          console.error('getSession error:', error)
-          setLoading(false)
+          finishLoading()
           return
         }
-
         if (session?.user) {
           setUser(session.user)
           await loadProfile(session.user.id)
         } else {
-          setLoading(false)
+          finishLoading()
         }
       } catch (err) {
         console.error('Auth init error:', err)
-        if (mountedRef.current) setLoading(false)
+        finishLoading()
       }
     }
 
@@ -41,24 +49,23 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mountedRef.current) return
-        
-        console.log('Auth event:', event)
-        
         if (session?.user) {
           setUser(session.user)
-          if (event === 'SIGNED_IN') {
+          // Handle both first login AND returning with stored session
+          if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
             await loadProfile(session.user.id)
           }
         } else {
           setUser(null)
           setProfile(null)
-          setLoading(false)
+          finishLoading()
         }
       }
     )
 
     return () => {
       mountedRef.current = false
+      clearTimeout(timeout)
       subscription.unsubscribe()
     }
   }, [])
@@ -74,28 +81,21 @@ export function AuthProvider({ children }) {
       if (!mountedRef.current) return
 
       if (error && error.code === 'PGRST116') {
-        // Profile doesn't exist yet — create one
         const { data: newProfile, error: createError } = await supabase
           .from('profiles')
           .insert([{ user_id: userId, name: 'User', bank_balance: 0, cash_balance: 0, liabilities: 0 }])
           .select()
           .single()
-        
         if (!createError && mountedRef.current) {
           setProfile(newProfile)
-        } else if (createError) {
-          console.error('Profile create error:', createError)
         }
-      } else if (error) {
-        // Table might not exist or RLS is blocking — still let user in
-        console.error('Profile fetch error:', error.message)
-      } else {
+      } else if (!error) {
         setProfile(data)
       }
     } catch (err) {
-      console.error('loadProfile exception:', err)
+      console.error('loadProfile error:', err)
     } finally {
-      if (mountedRef.current) setLoading(false)
+      finishLoading()
     }
   }
 
@@ -113,14 +113,11 @@ export function AuthProvider({ children }) {
 
   const signIn = async (email, password) => {
     setLoading(true)
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    })
+    loadingDone.current = false
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      setLoading(false)
+      finishLoading()
     }
-    // On success, onAuthStateChange will fire and call loadProfile
     return { data, error }
   }
 
