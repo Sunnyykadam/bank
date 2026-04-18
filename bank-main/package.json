@@ -1,0 +1,35 @@
+{
+  "name": "finpulse",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.4"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@supabase/supabase-js": "^2.103.2",
+    "canvas-confetti": "^1.9.4",
+    "date-fns": "^4.1.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
+    "lucide-react": "^1.8.0",
+    "react": "^19.2.5",
+    "react-datepicker": "^9.1.0",
+    "react-dom": "^19.2.5",
+    "react-hot-toast": "^2.6.0",
+    "react-router-dom": "^7.14.1",
+    "recharts": "^3.8.1"
+  }
+}
