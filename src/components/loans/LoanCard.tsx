@@ -4,220 +4,106 @@ import { formatCurrency, getStatusColor, calculateDaysOverdue } from '../../lib/
 
 export default function LoanCard({ loan, currentUserId, onAccept, onReject, onRepay }) {
   const isBorrower = loan.borrower_id === currentUserId;
-  const isLender = loan.lender_id === currentUserId;
   const isRecipient = loan.recipient_id === currentUserId;
   const isRequester = loan.requester_id === currentUserId;
   
   const statusStyle = getStatusColor(loan.status);
   const overdueDays = calculateDaysOverdue(loan.due_date);
 
-  // Determine display names
-  const borrowerName = loan.borrower?.name || (loan.loan_type === 'borrow' ? loan.requester?.name : loan.recipient?.name) || 'Unknown';
-  const lenderName = loan.lender?.name || (loan.loan_type === 'lend' ? loan.requester?.name : loan.recipient?.name) || 'Unknown';
+  const borrowerName = loan.borrower?.name || (loan.loan_type === 'borrow' ? loan.requester?.name : loan.recipient?.name) || 'User';
+  const lenderName = loan.lender?.name || (loan.loan_type === 'lend' ? loan.requester?.name : loan.recipient?.name) || 'User';
 
   return (
     <div style={{
-      background: 'var(--color-background-primary)',
-      border: '0.5px solid var(--color-border-tertiary)',
-      borderRadius: '10px',
-      padding: '16px',
+      background: 'var(--color-card)',
+      border: '1px solid var(--color-border)',
+      borderRadius: '12px',
+      padding: '12px',
       display: 'flex',
       flexDirection: 'column',
-      gap: '12px',
-      transition: 'transform 0.2s, box-shadow 0.2s',
-      cursor: 'default'
+      gap: '10px',
+      transition: 'all 0.2s'
     }}>
-      {/* Top Row: Borrower -> Lender + Status */}
+      {/* Top Row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: '500' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: '700', color: 'var(--color-text)' }}>
           <span>{borrowerName}</span>
-          <ArrowRight size={14} style={{ color: 'var(--color-text-secondary)' }} />
+          <ArrowRight size={10} style={{ opacity: 0.5 }} />
           <span>{lenderName}</span>
         </div>
         <div style={{
           background: statusStyle.bg,
           color: statusStyle.color,
-          padding: '4px 10px',
+          padding: '2px 8px',
           borderRadius: '20px',
-          fontSize: '11px',
-          fontWeight: statusStyle.fontWeight || '500',
-          textTransform: 'capitalize'
+          fontSize: '9px',
+          fontWeight: '800',
+          textTransform: 'uppercase',
+          letterSpacing: '0.4px'
         }}>
           {loan.status}
         </div>
       </div>
 
-      {/* Row 2: Amount & Due Date */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+      {/* Row 2: Amount */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: '22px', fontWeight: '600' }}>{formatCurrency(loan.amount)}</div>
-          <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Calendar size={12} />
-            Due: {new Date(loan.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+          <div style={{ fontSize: 'clamp(16px, 4vw, 18px)', fontWeight: '800', color: '#fff' }}>{formatCurrency(loan.amount)}</div>
+          <div style={{ fontSize: '10px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: 2 }}>
+            <Calendar size={10} />
+            Due {new Date(loan.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
           </div>
         </div>
         {loan.status === 'overdue' && (
-          <div style={{ fontSize: '12px', color: '#ef4444', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Clock size={12} />
-            {overdueDays} days overdue
+          <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <Clock size={10} /> {overdueDays}d
           </div>
         )}
       </div>
 
-      {/* Row 3: Remaining, Payment Method, Interest */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-        <div style={{ 
-          fontSize: '12px', 
-          background: 'var(--color-background-secondary)', 
-          padding: '4px 8px', 
-          borderRadius: '6px',
-          border: '0.5px solid var(--color-border-secondary)'
-        }}>
-          Remaining: {formatCurrency(loan.remaining_amount)}
+      {/* Stats Row */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+        <div style={{ fontSize: '10px', background: 'var(--color-input-bg)', padding: '3px 8px', borderRadius: '6px', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+          Bal: {formatCurrency(loan.remaining_amount)}
         </div>
-        <div style={{ 
-          fontSize: '11px', 
-          background: 'var(--color-background-secondary)', 
-          padding: '4px 8px', 
-          borderRadius: '6px',
-          textTransform: 'uppercase',
-          letterSpacing: '0.02em',
-          color: 'var(--color-text-secondary)'
-        }}>
+        <div style={{ fontSize: '9px', background: 'var(--color-muted)', padding: '3px 8px', borderRadius: '6px', textTransform: 'uppercase', fontWeight: 700, color: 'var(--color-text-secondary)' }}>
           {loan.payment_method}
         </div>
       </div>
 
-      {/* Notes Row */}
+      {/* Notes */}
       {loan.notes && (
         <div style={{ 
-          fontSize: '12px', 
-          color: 'var(--color-text-secondary)', 
-          fontStyle: 'italic',
-          borderTop: '0.5px solid var(--color-border-tertiary)',
-          paddingTop: '8px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical'
+          fontSize: '11px', color: 'var(--color-text-secondary)', fontStyle: 'italic',
+          paddingTop: '6px', borderTop: '1px solid var(--color-border)',
+          overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical'
         }}>
           "{loan.notes}"
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div style={{ marginTop: '4px', display: 'flex', gap: '8px' }}>
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: '6px' }}>
         {loan.status === 'pending' && isRecipient && (
           <>
-            <button 
-              onClick={() => onAccept(loan.id)}
-              style={{
-                flex: 1,
-                padding: '8px',
-                background: '#22c55e',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: '500',
-                cursor: 'pointer'
-              }}
-            >
-              Accept
-            </button>
-            <button 
-              onClick={() => onReject(loan.id)}
-              style={{
-                flex: 1,
-                padding: '8px',
-                background: '#ef4444',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: '500',
-                cursor: 'pointer'
-              }}
-            >
-              Reject
-            </button>
+            <button onClick={() => onAccept(loan.id)} className="btn btn-primary btn-sm" style={{ flex: 1, fontSize: '11px', padding: '6px' }}>Accept</button>
+            <button onClick={() => onReject(loan.id)} className="btn btn-danger btn-sm" style={{ flex: 1, fontSize: '11px', padding: '6px' }}>Reject</button>
           </>
         )}
 
         {loan.status === 'pending' && isRequester && (
-          <div style={{ 
-            fontSize: '12px', 
-            color: 'var(--color-text-secondary)', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '6px',
-            width: '100%',
-            justifyContent: 'center',
-            padding: '8px',
-            background: 'var(--color-background-secondary)',
-            borderRadius: '6px'
-          }}>
-            <Clock size={14} />
-            Awaiting response
+          <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', flex: 1, textAlign: 'center', padding: '6px', background: 'var(--color-muted)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+            <Clock size={12} /> Pending
           </div>
         )}
 
         {(loan.status === 'active' || loan.status === 'overdue') && isBorrower && (
-          <button 
-            onClick={() => onRepay(loan)}
-            style={{
-              width: '100%',
-              padding: '10px',
-              background: '#5b4cf5',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '500',
-              cursor: 'pointer'
-            }}
-          >
-            Repay Loan
-          </button>
+          <button onClick={() => onRepay(loan)} className="btn btn-primary btn-sm" style={{ width: '100%', fontSize: '11px', background: '#5b4cf5' }}>Repay Loan</button>
         )}
 
         {loan.status === 'completed' && (
-          <div style={{ 
-            width: '100%',
-            padding: '8px',
-            textAlign: 'center',
-            fontSize: '12px',
-            color: '#065f46',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            background: '#d1fae5',
-            borderRadius: '6px'
-          }}>
-            <CheckCircle2 size={14} />
+          <div style={{ width: '100%', padding: '6px', textAlign: 'center', fontSize: '10px', color: '#4ade80', fontWeight: 800, textTransform: 'uppercase', background: 'rgba(74, 222, 128, 0.1)', borderRadius: '6px' }}>
             Completed
-          </div>
-        )}
-
-        {loan.status === 'rejected' && (
-          <div style={{ 
-            width: '100%',
-            padding: '8px',
-            textAlign: 'center',
-            fontSize: '12px',
-            color: '#991b1b',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            background: '#fee2e2',
-            borderRadius: '6px',
-            fontWeight: '600'
-          }}>
-            <X size={14} />
-            Rejected
           </div>
         )}
       </div>

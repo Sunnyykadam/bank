@@ -33,43 +33,44 @@ export default function Loans() {
     date: new Date(nextDueLoan.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
   } : null;
 
-  const callLoanFunction = async (fnName, body) => {
-    const baseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    const { data: { session } } = await supabase.auth.getSession();
-
-    const response = await fetch(`${baseUrl}/functions/v1/${fnName}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token}`,
-        'apikey': anonKey
-      },
-      body: JSON.stringify(body)
-    });
-
-    const result = await response.json();
-    if (result.error) throw new Error(result.error);
-    if (!response.ok) throw new Error(`Server error: ${response.status}`);
-    return result;
-  };
-
   const handleAccept = async (loanId) => {
     try {
-      await callLoanFunction('accept-loan', { loan_id: loanId });
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/accept-loan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ loan_id: loanId })
+      });
+      const result = await response.json();
+      if (result.error) throw new Error(result.error);
       toast.success('Loan accepted!');
       refetch();
-    } catch (error) {
+    } catch (error: any) {
       toast.error(error.message);
     }
   };
 
   const handleReject = async (loanId) => {
     try {
-      await callLoanFunction('reject-loan', { loan_id: loanId });
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reject-loan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ loan_id: loanId })
+      });
+      const result = await response.json();
+      if (result.error) throw new Error(result.error);
       toast.success('Loan rejected.');
       refetch();
-    } catch (error) {
+    } catch (error: any) {
       toast.error(error.message);
     }
   };
@@ -97,27 +98,36 @@ export default function Loans() {
   const tabs = [
     { id: 'pending', label: 'Requests', count: pendingLoans.length, icon: History },
     { id: 'active', label: 'Active', count: activeLoans.length, icon: LayoutDashboard },
-    { id: 'overdue', label: 'Overdue', count: overdueLoans.length, icon: AlertCircle, color: overdueLoans.length > 0 ? '#ef4444' : undefined },
+    { id: 'overdue', label: 'Overdue', count: overdueLoans.length, icon: AlertCircle, color: '#ef4444' },
     { id: 'completed', label: 'History', count: completedLoans.length, icon: CheckCircle2 }
   ];
 
   return (
-    <div className="page-container">
-      <div className="stack-mobile" style={{ marginBottom: '24px' }}>
-        <div>
-          <h1 style={{ margin: 0 }}>Loans</h1>
-          <p className="header-date">
-            Personal lendings and borrowings between friends
-          </p>
+    <div className="page-container" style={{ padding: 'clamp(12px, 3vw, 24px)' }}>
+      <style>{`
+        .loans-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+        .loans-title-section h1 { margin: 0; font-size: clamp(20px, 4.5vw, 28px); font-weight: 800; color: #fff; }
+        .loans-title-section p { color: var(--color-text-secondary); font-size: clamp(11px, 2.5vw, 13px); margin-top: 2px; }
+
+        .loans-tabs-wrap { display: flex; align-items: center; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 16px; border-bottom: 1px solid var(--color-border); padding-bottom: 4px; }
+        .loan-tab { padding: 10px 14px; border: none; background: none; cursor: pointer; white-space: nowrap; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; transition: all 0.2s; position: relative; }
+        .loan-tab.active { color: var(--color-primary); }
+        .loan-tab.active::after { content: ''; position: absolute; bottom: -4px; left: 0; right: 0; height: 2px; background: var(--color-primary); }
+        .loan-tab:not(.active) { color: var(--color-text-secondary); }
+        
+        .tab-count { font-size: 9px; padding: 1px 6px; border-radius: 10px; background: var(--color-muted); color: var(--color-text); }
+        .tab-count.has-items { background: var(--color-primary); color: #fff; }
+      `}</style>
+
+      <div className="loans-header">
+        <div className="loans-title-section">
+          <h1>Lendings & Loans</h1>
+          <p>Manage personal debts and credits</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <NotificationBell />
-          <button 
-            onClick={() => setIsNewModalOpen(true)}
-            className="btn btn-primary"
-          >
-            <Plus size={18} />
-            <span>New Request</span>
+          <button onClick={() => setIsNewModalOpen(true)} className="btn btn-primary btn-sm">
+            <Plus size={15} /> <span>New Request</span>
           </button>
         </div>
       </div>
@@ -130,34 +140,20 @@ export default function Loans() {
         pendingActionCount={pendingActionCount}
       />
 
-      <div className="scroll-x" style={{ borderBottom: '1px solid var(--color-border)', marginBottom: '20px' }}>
+      <div className="loans-tabs-wrap scroll-x">
         {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              padding: '12px 16px', background: 'none', border: 'none',
-              borderBottom: activeTab === tab.id ? '2px solid var(--color-primary)' : '2px solid transparent',
-              color: activeTab === tab.id ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-              cursor: 'pointer', fontSize: '13px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px', 
-              whiteSpace: 'nowrap'
-            }}
-          >
-            <tab.icon size={16} />
-            {tab.label}
-            {tab.count > 0 && (
-              <span className="badge badge-sm" style={{ background: tab.color || 'var(--color-primary)', color: 'white' }}>
-                {tab.count}
-              </span>
-            )}
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`loan-tab ${activeTab === tab.id ? 'active' : ''}`}>
+             <tab.icon size={14} />
+             {tab.label}
+             {tab.count > 0 && <span className={`tab-count ${tab.count > 0 ? 'has-items' : ''}`} style={tab.id === 'overdue' ? {background: '#ef4444'} : {}}>{tab.count}</span>}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div style={{ padding: '60px', textAlign: 'center' }}>Loading...</div>
+        <div style={{ padding: '60px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading transactions...</div>
       ) : (
-        <div className="grid-responsive">
+        <div className="grid-responsive" style={{ paddingTop: 8 }}>
           {getFilteredLoans().map(loan => (
             <LoanCard 
               key={loan.id} 
@@ -169,9 +165,9 @@ export default function Loans() {
             />
           ))}
           {getFilteredLoans().length === 0 && (
-            <div className="empty-state" style={{ gridColumn: '1 / -1', border: '1px dashed var(--color-border)', borderRadius: '12px' }}>
-               <AlertCircle className="empty-state-icon" size={32} />
-               <p className="empty-state-title">{getEmptyMessage()}</p>
+            <div className="empty-state" style={{ gridColumn: '1 / -1', padding: '40px 20px', border: '1px dashed var(--color-border)', borderRadius: '16px' }}>
+               <AlertCircle style={{ opacity: 0.3 }} size={32} />
+               <p style={{ marginTop: 12, fontWeight: 600, opacity: 0.5, fontSize: 13 }}>{getEmptyMessage()}</p>
             </div>
           )}
         </div>
