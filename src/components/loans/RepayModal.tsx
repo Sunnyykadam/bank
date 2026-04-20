@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { X, ArrowRight, Info } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../context/AuthContext';
 import { formatCurrency } from '../../lib/loanHelpers';
 import toast from 'react-hot-toast';
 
 export default function RepayModal({ loan, isOpen, onClose, onSuccess }) {
+  const { profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [amount, setAmount] = useState(loan?.remaining_amount?.toString() || '');
   const [paymentMethod, setPaymentMethod] = useState('bank');
@@ -17,6 +19,12 @@ export default function RepayModal({ loan, isOpen, onClose, onSuccess }) {
     
     if (isNaN(amountNum) || amountNum <= 0) return toast.error('Invalid amount');
     if (amountNum > loan.remaining_amount) return toast.error(`Max repayment is ₹${loan.remaining_amount}`);
+
+    // BALANCE CHECK
+    const available = paymentMethod === 'cash' ? (profile?.cash_balance || 0) : (profile?.bank_balance || 0);
+    if (amountNum > available) {
+      return toast.error(`Insufficient ${paymentMethod} balance (₹${available.toLocaleString('en-IN')})`);
+    }
 
     setLoading(true);
     try {
@@ -91,6 +99,7 @@ export default function RepayModal({ loan, isOpen, onClose, onSuccess }) {
             <input
               type="number"
               required
+              min="0"
               max={loan.remaining_amount}
               step="0.01"
               value={amount}

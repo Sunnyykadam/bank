@@ -79,10 +79,19 @@ export default function TransactionModal({
 
     setLoading(true);
     try {
-      if (form.type === 'expense') {
-        const available = form.payment_method === 'cash' ? cashBalance : bankBalance;
-        if (amt > available) {
-          toast.error(`Low Balance! You only have ₹${available.toLocaleString('en-IN')} in ${form.payment_method}.`);
+      // ─────────────────────────────────────────────────────────────────────────
+      // ZERO BALANCE PROTECTION (Comprehensive)
+      // ─────────────────────────────────────────────────────────────────────────
+      if (form.type === 'expense' && profile) {
+        let availableNow = form.payment_method === 'cash' ? profile.cash_balance : profile.bank_balance;
+        
+        // If editing, we must "add back" the old transaction value before checking
+        if (editData && editData.type === 'expense' && editData.payment_method === form.payment_method) {
+          availableNow += Number(editData.amount);
+        }
+
+        if (amt > availableNow) {
+          toast.error(`Insufficient Balance! Limit: ₹${availableNow.toLocaleString('en-IN')}`);
           setLoading(false);
           return;
         }
@@ -152,7 +161,7 @@ export default function TransactionModal({
 
         <div style={amountSectionStyle}>
           <span style={rupeeStyle}>₹</span>
-          <input type="number" step="0.01" autoFocus placeholder="0" 
+          <input type="number" min="0" step="0.01" autoFocus placeholder="0" 
             value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
             style={amountInputStyle} />
         </div>
@@ -179,22 +188,30 @@ export default function TransactionModal({
         <div style={sectionStyle}>
           <label style={labelStyle}>Account</label>
           <div style={methodGridStyle}>
-            {PAYMENT_METHODS.map(pm => (
-              <button key={pm.value} type="button" onClick={() => setForm(f => ({ ...f, payment_method: pm.value }))}
-                style={{
-                  ...methodCardStyle,
-                  flex: 1,
-                  borderColor: form.payment_method === pm.value ? pm.color : 'var(--color-border)',
-                  background: form.payment_method === pm.value ? `${pm.color}20` : 'var(--color-input-bg)',
-                  color: form.payment_method === pm.value ? 'var(--color-text)' : 'var(--color-text-secondary)'
-                }}>
-                <pm.icon size={20} color={form.payment_method === pm.value ? pm.color : 'var(--color-text-secondary)'} />
-                <span style={{ fontSize: '14px', fontWeight: form.payment_method === pm.value ? '700' : '500' }}>{pm.label}</span>
-                <span style={{ fontSize: '11px', opacity: 0.8 }}>
-                  ₹{(pm.value === 'cash' ? cashBalance : bankBalance).toLocaleString('en-IN')}
-                </span>
-              </button>
-            ))}
+            {PAYMENT_METHODS.map(pm => {
+               const bal = (pm.value === 'cash' ? (profile?.cash_balance || 0) : (profile?.bank_balance || 0));
+               let availableNow = bal;
+               // Show effective balance if editing
+               if (editData && editData.type === 'expense' && editData.payment_method === pm.value) {
+                 availableNow += Number(editData.amount);
+               }
+               return (
+                <button key={pm.value} type="button" onClick={() => setForm(f => ({ ...f, payment_method: pm.value }))}
+                  style={{
+                    ...methodCardStyle,
+                    flex: 1,
+                    borderColor: form.payment_method === pm.value ? pm.color : 'var(--color-border)',
+                    background: form.payment_method === pm.value ? `${pm.color}20` : 'var(--color-input-bg)',
+                    color: form.payment_method === pm.value ? 'var(--color-text)' : 'var(--color-text-secondary)'
+                  }}>
+                  <pm.icon size={20} color={form.payment_method === pm.value ? pm.color : 'var(--color-text-secondary)'} />
+                  <span style={{ fontSize: '14px', fontWeight: form.payment_method === pm.value ? '700' : '500' }}>{pm.label}</span>
+                  <span style={{ fontSize: '11px', opacity: 0.8 }}>
+                    ₹{availableNow.toLocaleString('en-IN')}
+                  </span>
+                </button>
+               )
+            })}
           </div>
         </div>
 

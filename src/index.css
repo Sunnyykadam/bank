@@ -253,7 +253,7 @@ input, select, textarea {
   background: var(--color-input-bg);
   color: var(--color-text);
   font-family: var(--font-family);
-  font-size: 14px;
+  font-size: clamp(13px, 3vw, 14px);
   transition: all var(--transition);
   outline: none;
   width: 100%;
