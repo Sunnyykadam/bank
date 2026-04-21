@@ -19,8 +19,10 @@ import { format, subDays, subMonths, startOfMonth, endOfMonth, startOfWeek, endO
 const CATEGORY_COLORS = {
   Food: '#F97316', Rent: '#8B5CF6', Salary: '#22C55E', EMI: '#EF4444',
   Medical: '#EC4899', Entertainment: '#F59E0B', Shopping: '#06B6D4',
-  Investment: '#4F46E5', 'Goal Payment': '#10B981', Other: '#6B7280'
+  Investment: '#4F46E5', 'Goal Payment': '#10B981', Other: '#6B7280',
+  loan: '#5b4cf5', loan_repayment: '#22c55e'
 }
+
 
 const TIME_RANGES = [
   { key: 'week', label: 'This Week' },

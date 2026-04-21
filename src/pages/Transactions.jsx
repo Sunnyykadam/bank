@@ -22,7 +22,10 @@ const CATEGORIES = [
   { value: 'Entertainment', label: 'Entertainment', emoji: '🎬', color: '#fb7185' },
   { value: 'Shopping', label: 'Shopping', emoji: '🛍️', color: '#2dd4bf' },
   { value: 'Other', label: 'Other/Study', emoji: '📋', color: '#94a3b8' },
+  { value: 'loan', label: 'Loan', emoji: '🤝', color: '#5b4cf5' },
+  { value: 'loan_repayment', label: 'Repayment', emoji: '💸', color: '#22c55e' },
 ]
+
 
 const PAYMENT_METHODS = [
   { value: 'cash', label: 'Cash', icon: Banknote },
@@ -206,6 +209,41 @@ export default function Transactions() {
               <input type="date" className="high-contrast-input" value={draftFilters.dateTo} onChange={e => setDraftFilters({...draftFilters, dateTo: e.target.value})} />
             </div>
           </div>
+          
+          <div style={{ marginTop: 16 }}>
+
+            <label className="high-contrast-label">Categories</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: 8 }}>
+              {CATEGORIES.map(cat => (
+                <button
+                  key={cat.value}
+                  type="button"
+                  onClick={() => {
+                    const current = draftFilters.categories || []
+                    const next = current.includes(cat.value)
+                      ? current.filter(c => c !== cat.value)
+                      : [...current, cat.value]
+                    setDraftFilters({ ...draftFilters, categories: next })
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '20px',
+                    fontSize: '11px',
+                    fontWeight: '700',
+                    border: '1px solid',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    background: draftFilters.categories?.includes(cat.value) ? cat.color : 'transparent',
+                    borderColor: cat.color,
+                    color: draftFilters.categories?.includes(cat.value) ? 'white' : cat.color
+                  }}
+                >
+                  {cat.emoji} {cat.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="form-actions" style={{ marginTop: 12, justifyContent: 'flex-start', gap: '8px' }}>
             <button className="btn btn-primary btn-sm" onClick={() => { setFilters(draftFilters); setShowFilters(false) }}>Apply</button>
             <button className="btn btn-ghost btn-sm" onClick={() => { 
@@ -238,8 +276,10 @@ export default function Transactions() {
               transactions.map(t => {
                 const isInc = t.type === 'income'
                 const PayIcon = getPayIcon(t.payment_method)
+                const isSystem = t.source === 'loan' || t.source === 'loan_repayment'
+                
                 return (
-                  <tr key={t.id}>
+                  <tr key={t.id} title={isSystem ? "This transaction was automatically created by a loan action. Manage it from the Loans page." : ""}>
                     <td><div style={{ fontWeight: 700 }}>{format(new Date(t.date_time), 'MMM dd')}</div><div style={{ fontSize: '10px', opacity: 0.5 }}>{format(new Date(t.date_time), 'HH:mm')}</div></td>
                     <td>
                       <span className="badge" style={{ 
@@ -253,18 +293,31 @@ export default function Transactions() {
                         {isInc ? 'Credit' : 'Debit'}
                       </span>
                     </td>
-                    <td><div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><span>{getCatEmoji(t.category)}</span><span style={{ fontWeight: 600 }}>{t.category}</span></div></td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>{getCatEmoji(t.category)}</span>
+                        <span style={{ fontWeight: 600 }}>{t.category === 'loan' ? 'Loan' : t.category === 'loan_repayment' ? 'Repayment' : t.category}</span>
+                        {isSystem && (
+                          <span className="badge badge-sm" style={{ background: 'var(--color-primary)', color: 'white', fontSize: '8px', padding: '1px 4px', marginLeft: '4px' }}>
+                             🔗 AUTO
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td><div className="badge badge-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '10px' }}><PayIcon size={10} /> {t.payment_method}</div></td>
                     <td style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.7 }}>{t.note || '—'}</td>
                     <td style={{ fontWeight: 800, color: isInc ? '#22c55e' : '#ef4444', fontSize: '13px' }}>{isInc ? '+' : '-'}₹{t.amount.toLocaleString('en-IN')}</td>
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
-                        <button className="icon-btn" onClick={() => { setEditData(t); setModalOpen(true) }} style={{ width: 28, height: 28 }}><Edit2 size={12} /></button>
-                      </div>
+                      {!isSystem && (
+                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                          <button className="icon-btn" onClick={() => { setEditData(t); setModalOpen(true) }} style={{ width: 28, height: 28 }}><Edit2 size={12} /></button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )
               })
+
             )}
           </tbody>
         </table>

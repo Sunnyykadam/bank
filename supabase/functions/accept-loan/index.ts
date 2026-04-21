@@ -38,31 +38,87 @@ serve(async (req) => {
     
     // THE UNAUTHORIZED CHECK
     if (loan.recipient_id !== user.id) {
-       throw new Error(`Unauthorized! You are ${user.email}, but the recipient is ${loan.recipient_id}. Only the recipient can accept.`)
+       throw new Error(`Unauthorized! Only the recipient can accept this request.`)
     }
 
     if (loan.status !== 'pending') throw new Error('Loan is already active or rejected')
 
-    // Update statuses...
-    const borrower_id = loan.loan_type === 'borrow' ? loan.requester_id : loan.recipient_id
-    const lender_id = loan.loan_type === 'borrow' ? loan.recipient_id : loan.requester_id
+    // CHANGE 1 & 8: Assign roles
+    // Requester is ALWAYS the borrower, Recipient is ALWAYS the lender
+    const borrower_id = loan.requester_id
+    const lender_id = loan.recipient_id
 
+    // CHANGE 2 & 7: Balance check & update
+    const balanceField = loan.payment_method === 'cash' ? 'cash_balance' : 'bank_balance'
+    
+    // Fetch lender's balance
+    const { data: lenderProfile, error: lenderError } = await adminClient
+      .from('profiles')
+      .select('name, ' + balanceField)
+      .eq('user_id', lender_id)
+      .single()
+
+    if (lenderError || !lenderProfile) throw new Error('Could not verify lender balance')
+    
+    const availableBalance = Number(lenderProfile[balanceField]) || 0
+    if (availableBalance < loan.amount) {
+      throw new Error(`Lender has insufficient ${loan.payment_method} balance (available: ₹${availableBalance.toLocaleString('en-IN')})`)
+    }
+
+    // Update loan status
     const { error: updateError } = await adminClient
+
       .from('loans')
-      .update({ status: 'active', borrower_id, lender_id, updated_at: new Date().toISOString() })
+      .update({ 
+        status: 'active', 
+        borrower_id, 
+        lender_id, 
+        updated_at: new Date().toISOString() 
+      })
       .eq('id', loan_id)
 
     if (updateError) throw updateError
 
-    // Balances...
-    const balanceField = loan.payment_method === 'cash' ? 'cash_balance' : 'bank_balance'
-    const { data: bProfile } = await adminClient.from('profiles').select(balanceField).eq('user_id', borrower_id).single()
-    const { data: lProfile } = await adminClient.from('profiles').select(balanceField).eq('user_id', lender_id).single()
-    
-    if (bProfile && lProfile) {
-       await adminClient.from('profiles').update({ [balanceField]: (Number(bProfile[balanceField]) || 0) + Number(loan.amount) }).eq('user_id', borrower_id)
-       await adminClient.from('profiles').update({ [balanceField]: (Number(lProfile[balanceField]) || 0) - Number(loan.amount) }).eq('user_id', lender_id)
-    }
+    // CHANGE 3: Auto-create transactions for both users
+    const { data: borrowerProfile } = await adminClient
+      .from('profiles')
+      .select('name')
+      .eq('user_id', borrower_id)
+      .single()
+
+    const loanIdShort = loan.id.substring(0, 8)
+    const lenderNote = `Loan given to ${borrowerProfile?.name || 'Borrower'} (Loan #${loanIdShort})`
+    const borrowerNote = `Loan received from ${lenderProfile?.name || 'Lender'} (Loan #${loanIdShort})`
+
+    const { error: txError } = await adminClient
+      .from('transactions')
+      .insert([
+        {
+          user_id: lender_id,
+          type: 'expense',
+          category: 'loan',
+          amount: loan.amount,
+          payment_method: loan.payment_method,
+          note: lenderNote,
+          date_time: new Date().toISOString(),
+          source: 'loan',
+          source_id: loan.id
+        },
+        {
+          user_id: borrower_id,
+          type: 'income',
+          category: 'loan',
+          amount: loan.amount,
+          payment_method: loan.payment_method,
+          note: borrowerNote,
+          date_time: new Date().toISOString(),
+          source: 'loan',
+          source_id: loan.id
+        }
+      ])
+
+    if (txError) throw txError
+
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -76,3 +132,4 @@ serve(async (req) => {
     })
   }
 })
+

@@ -51,15 +51,38 @@ serve(async (req) => {
       updated_at: new Date().toISOString()
     }).eq('id', loan_id)
 
-    // Update Balances
-    const balanceField = payment_method === 'cash' ? 'cash_balance' : 'bank_balance'
-    const { data: bProfile } = await adminClient.from('profiles').select(balanceField).eq('user_id', loan.borrower_id).single()
-    const { data: lProfile } = await adminClient.from('profiles').select(balanceField).eq('user_id', loan.lender_id).single()
+    // CHANGE 4: Auto-create transactions on repayment
+
+    const { data: bProfileData } = await adminClient.from('profiles').select('name').eq('user_id', loan.borrower_id).single()
+    const { data: lProfileData } = await adminClient.from('profiles').select('name').eq('user_id', loan.lender_id).single()
+
+    const loanIdShort = loan.id.substring(0, 8)
     
-    if (bProfile && lProfile) {
-       await adminClient.from('profiles').update({ [balanceField]: (Number(bProfile[balanceField]) || 0) - repayAmount }).eq('user_id', loan.borrower_id)
-       await adminClient.from('profiles').update({ [balanceField]: (Number(lProfile[balanceField]) || 0) + repayAmount }).eq('user_id', loan.lender_id)
-    }
+    await adminClient.from('transactions').insert([
+      {
+        user_id: loan.borrower_id,
+        type: 'expense',
+        category: 'loan_repayment',
+        amount: repayAmount,
+        payment_method: payment_method,
+        note: `Loan repayment to ${lProfileData?.name || 'Lender'} (Loan #${loanIdShort})`,
+        date_time: new Date().toISOString(),
+        source: 'loan_repayment',
+        source_id: loan.id
+      },
+      {
+        user_id: loan.lender_id,
+        type: 'income',
+        category: 'loan_repayment',
+        amount: repayAmount,
+        payment_method: payment_method,
+        note: `Loan repayment from ${bProfileData?.name || 'Borrower'} (Loan #${loanIdShort})`,
+        date_time: new Date().toISOString(),
+        source: 'loan_repayment',
+        source_id: loan.id
+      }
+    ])
+
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

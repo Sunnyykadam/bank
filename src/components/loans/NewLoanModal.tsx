@@ -146,33 +146,9 @@ export default function NewLoanModal({ isOpen, onClose, onSuccess }) {
             </div>
           </div>
 
-          {/* Loan Type */}
-          <div>
-            <label style={labelStyle}>I want to...</label>
-            <div style={{ display: 'flex', background: '#1a1a2e', borderRadius: '12px', padding: '4px' }}>
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, loan_type: 'borrow' })}
-                style={{
-                  flex: 1, padding: '10px', borderRadius: '10px', border: 'none', cursor: 'pointer',
-                  background: formData.loan_type === 'borrow' ? '#5b4cf5' : 'none',
-                  color: 'white', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s'
-                }}
-              >Borrow</button>
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, loan_type: 'lend' })}
-                style={{
-                  flex: 1, padding: '10px', borderRadius: '10px', border: 'none', cursor: 'pointer',
-                  background: formData.loan_type === 'lend' ? '#5b4cf5' : 'none',
-                  color: 'white', fontSize: '13px', fontWeight: '600', transition: 'all 0.2s'
-                }}
-              >Lend</button>
-            </div>
-          </div>
-
           {/* Amount & Due Date */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+
             <div>
               <label style={labelStyle}>Amount (₹)</label>
               <input

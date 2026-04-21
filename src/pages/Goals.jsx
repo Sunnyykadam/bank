@@ -361,8 +361,9 @@ export default function Goals() {
       user_id: user.id, date_time: new Date().toISOString(), type: 'expense',
       amount, payment_method: 'bank', category: 'Goal Payment',
       linked_goal_id: topUpGoal.id, note: `Goal: ${topUpGoal.name}`,
-      is_split: false, is_recurring: false
+      is_split: false, is_recurring: false, source: 'manual'
     }])
+
     toast.success(`₹${amount.toLocaleString('en-IN')} added to ${topUpGoal.name}!`)
     setTopUpGoal(null); fetchGoals()
   }

@@ -25,7 +25,10 @@ const CATEGORIES = [
   { value: 'Entertainment', label: 'Entertainment', emoji: '🎬', color: '#fb7185' },
   { value: 'Shopping', label: 'Shopping', emoji: '🛍️', color: '#2dd4bf' },
   { value: 'Other', label: 'Other/Study', emoji: '📋', color: '#94a3b8' },
+  { value: 'loan', label: 'Loan', emoji: '🤝', color: '#5b4cf5' },
+  { value: 'loan_repayment', label: 'Repayment', emoji: '💸', color: '#22c55e' },
 ];
+
 
 const getBalanceKey = (method) => {
   if (method === 'cash') return 'cash_balance';
@@ -110,7 +113,9 @@ export default function TransactionModal({
         category: finalCategory,
         note: form.note,
         is_split: false,
+        source: 'manual'
       };
+
 
       if (onSubmit) {
         await onSubmit(payload, editData?.id);
@@ -124,13 +129,9 @@ export default function TransactionModal({
         ({ error } = await supabase.from('transactions').update(payload).eq('id', editData.id));
       } else {
         ({ error } = await supabase.from('transactions').insert([payload]));
-        if (profile) {
-          const factor = payload.type === 'expense' ? -1 : 1;
-          const key = getBalanceKey(payload.payment_method);
-          await updateProfile({ [key]: (profile[key] || 0) + (amt * factor) });
-        }
       }
       if (error) throw error;
+
 
       toast.success(editData ? 'Updated!' : 'Saved!');
       if (onSuccess) onSuccess();
