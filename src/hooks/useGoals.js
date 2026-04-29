@@ -14,7 +14,7 @@ export function useGoals() {
     setLoading(true)
     try {
       const { data, error } = await supabase
-        .from('goals')
+        .from('savings_goals')
         .select('*')
         .eq('user_id', user.id)
         .order('priority', { ascending: true })
@@ -60,7 +60,7 @@ export function useGoals() {
     try {
       const maxPriority = goals.length > 0 ? Math.max(...goals.map(g => g.priority || 0)) : 0
       const { data, error } = await supabase
-        .from('goals')
+        .from('savings_goals')
         .insert([{ ...goal, user_id: user.id, priority: maxPriority + 1 }])
         .select()
         .single()
@@ -87,7 +87,7 @@ export function useGoals() {
       }
 
       const { data, error } = await supabase
-        .from('goals')
+        .from('savings_goals')
         .update(updates)
         .eq('id', id)
         .eq('user_id', user.id)
@@ -106,7 +106,7 @@ export function useGoals() {
     if (!user) return { error: 'Not authenticated' }
     try {
       const { error } = await supabase
-        .from('goals')
+        .from('savings_goals')
         .delete()
         .eq('id', id)
         .eq('user_id', user.id)
@@ -130,7 +130,7 @@ export function useGoals() {
 
       for (const update of updates) {
         await supabase
-          .from('goals')
+          .from('savings_goals')
           .update({ priority: update.priority })
           .eq('id', update.id)
           .eq('user_id', user.id)

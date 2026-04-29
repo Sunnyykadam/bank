@@ -41,7 +41,7 @@ export function useDashboard() {
         supabase.from('transactions').select('type, amount, category').eq('user_id', user.id).gte('date_time', firstDayMonth),
         supabase.from('transactions').select('*').eq('user_id', user.id).order('date_time', { ascending: false }).limit(10),
         supabase.from('loans').select('*').or(`borrower_id.eq.${user.id},lender_id.eq.${user.id}`).in('status', ['active', 'overdue']),
-        supabase.from('goals').select('*').eq('user_id', user.id).neq('status', 'completed').order('target_date', { ascending: true }).limit(4),
+        supabase.from('savings_goals').select('*').eq('user_id', user.id).neq('status', 'completed').order('target_date', { ascending: true }).limit(4),
         supabase.from('transactions').select('date_time, amount').eq('user_id', user.id).eq('type', 'expense').gte('date_time', sixMonthsAgo)
       ]);
 

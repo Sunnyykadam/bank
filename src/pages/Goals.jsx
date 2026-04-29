@@ -16,7 +16,7 @@ import {
 } from 'recharts'
 import {
   Plus, Pause, Play, Archive, CheckCircle2, Edit2, GripVertical,
-  ChevronDown, ChevronUp, ArrowUpRight, Calendar, Target, DollarSign
+  ChevronDown, ChevronUp, ArrowUpRight, Calendar, Target, DollarSign, History
 } from 'lucide-react'
 import { format, differenceInDays, differenceInMonths, addMonths } from 'date-fns'
 
@@ -116,29 +116,121 @@ function GoalModal({ isOpen, onClose, onSubmit, editData }) {
   )
 }
 
-function TopUpModal({ isOpen, onClose, onSubmit, goal }) {
+function PayGoalModal({ isOpen, onClose, onSuccess, goal }) {
+  const { user, profile, refreshProfile } = useAuth()
   const [amount, setAmount] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('cash')
+  const [note, setNote] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const handleSubmit = (e) => {
+  const cashBalance = Number(profile?.cash_balance) || 0
+  const bankBalance = Number(profile?.bank_balance) || 0
+  const remaining = Number(goal?.target_amount || 0) - Number(goal?.current_amount || 0)
+  const selectedBalance = paymentMethod === 'cash' ? cashBalance : bankBalance
+  const amtNum = Number(amount) || 0
+
+  useEffect(() => { setAmount(''); setPaymentMethod('cash'); setNote(''); setError('') }, [goal])
+
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!amount || Number(amount) <= 0) { toast.error('Enter a valid amount'); return }
-    onSubmit(Number(amount))
-    setAmount('')
+    if (amtNum <= 0) { setError('Amount must be greater than zero'); return }
+    if (amtNum > remaining) { setError(`Amount exceeds remaining (₹${remaining.toLocaleString('en-IN')})`); return }
+    if (amtNum > selectedBalance) { setError(`Insufficient ${paymentMethod} balance (₹${selectedBalance.toLocaleString('en-IN')})`); return }
+
+    setLoading(true); setError('')
+    try {
+      // 5a. Update balances
+      const balUpdate = { updated_at: new Date().toISOString(), savings_balance: (Number(profile?.savings_balance) || 0) + amtNum }
+      if (paymentMethod === 'cash') balUpdate.cash_balance = cashBalance - amtNum
+      else balUpdate.bank_balance = bankBalance - amtNum
+
+      const { error: balErr } = await supabase.from('profiles').update(balUpdate).eq('user_id', user.id)
+      if (balErr) throw new Error('Failed to update balance: ' + balErr.message)
+
+      // 5b. Update goal
+      const newCurrent = Number(goal.current_amount || 0) + amtNum
+      const newStatus = newCurrent >= Number(goal.target_amount) ? 'completed' : goal.status
+      const { error: goalErr } = await supabase.from('savings_goals').update({ current_amount: newCurrent, status: newStatus }).eq('id', goal.id)
+      if (goalErr) throw new Error('Failed to update goal: ' + goalErr.message)
+
+      // 5c. Insert goal_transaction
+      const { error: gtErr } = await supabase.from('goal_transactions').insert([{ goal_id: goal.id, user_id: user.id, amount: amtNum, payment_method: paymentMethod, note: note || null }])
+      if (gtErr) throw new Error('Failed to log goal transaction: ' + gtErr.message)
+
+      // 5d. Insert into main transactions table
+      const { error: txErr } = await supabase.from('transactions').insert([{
+        user_id: user.id,
+        date_time: new Date().toISOString(),
+        type: 'expense',
+        amount: amtNum,
+        payment_method: paymentMethod,
+        category: 'Goal Payment',
+        linked_goal_id: goal.id,
+        note: `Goal: ${goal.name}${note ? ` - ${note}` : ''}`,
+        is_split: false,
+        is_recurring: false,
+        source: 'manual'
+      }])
+      if (txErr) throw new Error('Failed to log main transaction: ' + txErr.message)
+
+      // Milestone celebration
+      const oldPct = (Number(goal.current_amount) / Number(goal.target_amount)) * 100
+      const newPct = (newCurrent / Number(goal.target_amount)) * 100
+      for (const m of [25, 50, 75, 100]) {
+        if (oldPct < m && newPct >= m) {
+          confetti({ particleCount: 200, spread: 90, origin: { y: 0.5 }, colors: ['#4F46E5', '#22C55E', '#F59E0B', '#EF4444'] })
+          toast.success(`🎉 ${m === 100 ? `${goal.name} completed!` : `You've reached ${m}% of ${goal.name}!`}`, { duration: 5000 })
+          break
+        }
+      }
+      toast.success(`₹${amtNum.toLocaleString('en-IN')} added to ${goal.name}!`)
+      refreshProfile()
+      if (onSuccess) onSuccess()
+      onClose()
+    } catch (err) { setError(err.message || 'Something went wrong') }
+    finally { setLoading(false) }
   }
 
+  if (!goal) return null
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Top Up — ${goal?.name || ''}`} size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} title={`Add Payment — ${goal?.name || ''}`} size="sm">
       <form onSubmit={handleSubmit} className="tx-form">
+        <div style={{ textAlign: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>{goal.icon || '🎯'} {goal.name}</div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+            ₹{Number(goal.current_amount || 0).toLocaleString('en-IN')} / ₹{Number(goal.target_amount).toLocaleString('en-IN')} • Remaining: ₹{remaining.toLocaleString('en-IN')}
+          </div>
+        </div>
         <div className="form-group">
           <label>Amount (₹)</label>
           <div className="amount-input-wrapper">
             <span className="amount-prefix">₹</span>
-            <input type="number" min="0" value={amount} onChange={e => setAmount(e.target.value)} autoFocus />
+            <input type="number" min="1" max={remaining} step="0.01" value={amount} onChange={e => setAmount(e.target.value)} autoFocus />
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+            Available {paymentMethod}: ₹{selectedBalance.toLocaleString('en-IN')}
           </div>
         </div>
+        <div className="form-group">
+          <label>Payment Method</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {['cash', 'bank'].map(m => (
+              <button key={m} type="button" onClick={() => setPaymentMethod(m)}
+                style={{ flex: 1, padding: '10px', borderRadius: 10, border: `1.5px solid ${paymentMethod === m ? (m === 'cash' ? '#f59e0b' : '#3b82f6') : 'var(--color-border)'}`, background: paymentMethod === m ? (m === 'cash' ? 'rgba(245,158,11,0.1)' : 'rgba(59,130,246,0.1)') : 'var(--color-input-bg)', color: 'var(--color-text)', cursor: 'pointer', textAlign: 'center', fontWeight: 600, fontSize: 13, textTransform: 'capitalize' }}>
+                {m} — ₹{(m === 'cash' ? cashBalance : bankBalance).toLocaleString('en-IN')}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Note (optional)</label>
+          <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Monthly saving" />
+        </div>
+        {error && <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', padding: '8px 12px', borderRadius: 8 }}>{error}</div>}
         <div className="form-actions">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn-primary">Add Funds</button>
+          <button type="submit" className="btn btn-primary" disabled={loading}>{loading ? 'Processing...' : `Add ₹${amtNum > 0 ? amtNum.toLocaleString('en-IN') : '0'}`}</button>
         </div>
       </form>
     </Modal>
@@ -148,13 +240,29 @@ function TopUpModal({ isOpen, onClose, onSubmit, goal }) {
 function SortableGoalCard({ goal, onEdit, onTopUp, onTogglePause, onArchive, onComplete, theme }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: goal.id })
   const style = { transform: CSS.Transform.toString(transform), transition }
-  
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyTx, setHistoryTx] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+
   const progress = goal.target_amount > 0 ? (goal.current_amount / goal.target_amount) * 100 : 0
   const daysLeft = goal.target_date ? differenceInDays(new Date(goal.target_date), new Date()) : null
   const monthsLeft = goal.target_date ? Math.max(differenceInMonths(new Date(goal.target_date), new Date()), 1) : null
   const monthlyNeeded = monthsLeft ? Math.max(0, (goal.target_amount - goal.current_amount) / monthsLeft) : 0
-
   const radialData = [{ value: Math.min(progress, 100), fill: goal.color || '#4F46E5' }]
+
+  const toggleHistory = async () => {
+    if (!historyOpen) {
+      setHistoryLoading(true)
+      const { data } = await supabase
+        .from('goal_transactions')
+        .select('id, amount, payment_method, note, created_at')
+        .eq('goal_id', goal.id)
+        .order('created_at', { ascending: false })
+      setHistoryTx(data || [])
+      setHistoryLoading(false)
+    }
+    setHistoryOpen(!historyOpen)
+  }
 
   return (
     <div ref={setNodeRef} style={style} className="card goal-card">
@@ -222,6 +330,34 @@ function SortableGoalCard({ goal, onEdit, onTopUp, onTogglePause, onArchive, onC
           </button>
         )}
       </div>
+
+      {/* Collapsible Payment History (Part 5) */}
+      <button onClick={toggleHistory} className="btn btn-ghost btn-sm btn-full"
+        style={{ marginTop: 8, fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+        <History size={12} /> History {historyOpen ? '▴' : '▾'}
+      </button>
+      {historyOpen && (
+        <div style={{ marginTop: 8, borderTop: '0.5px solid var(--color-border)', paddingTop: 8 }}>
+          {historyLoading ? (
+            <div style={{ textAlign: 'center', fontSize: 11, opacity: 0.5, padding: 8 }}>Loading...</div>
+          ) : historyTx.length === 0 ? (
+            <div style={{ textAlign: 'center', fontSize: 11, opacity: 0.5, padding: 8 }}>No payments yet</div>
+          ) : (
+            historyTx.map(tx => (
+              <div key={tx.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '0.5px solid var(--color-border)', fontSize: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>{format(new Date(tx.created_at), 'MMM d')}</span>
+                  <span style={{ fontWeight: 600 }}>₹{Number(tx.amount).toLocaleString('en-IN')}</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4, textTransform: 'uppercase',
+                    background: tx.payment_method === 'cash' ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.15)',
+                    color: tx.payment_method === 'cash' ? '#f59e0b' : '#3b82f6' }}>{tx.payment_method}</span>
+                </div>
+                {tx.note && <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.note}</span>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -302,7 +438,6 @@ export default function Goals() {
   const { user } = useAuth()
   const { theme } = useTheme()
   const [goals, setGoals] = useState([])
-  const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editData, setEditData] = useState(null)
@@ -314,75 +449,42 @@ export default function Goals() {
   const fetchGoals = useCallback(async () => {
     if (!user) return
     setLoading(true)
-    const [goalsRes, txRes] = await Promise.all([
-      supabase.from('goals').select('*').eq('user_id', user.id).order('priority', { ascending: true }),
-      supabase.from('transactions').select('*').eq('user_id', user.id).eq('category', 'Goal Payment')
-    ])
+    const goalsRes = await supabase.from('savings_goals').select('*').eq('user_id', user.id).order('priority', { ascending: true })
     setGoals(goalsRes.data || [])
-    setTransactions(txRes.data || [])
     setLoading(false)
   }, [user])
 
   useEffect(() => { fetchGoals() }, [fetchGoals])
 
-  const checkMilestones = (goal, newAmount) => {
-    const milestones = [25, 50, 75, 100]
-    const oldPct = (goal.current_amount / goal.target_amount) * 100
-    const newPct = (newAmount / goal.target_amount) * 100
-    for (const m of milestones) {
-      if (oldPct < m && newPct >= m) {
-        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 },
-          colors: ['#4F46E5', '#22C55E', '#F59E0B', '#EF4444'] })
-        toast.success(`🎉 You've reached ${m}% of ${goal.name}!`, { duration: 5000 })
-        break
-      }
-    }
-  }
-
   const handleSubmit = async (payload, editId) => {
     if (editId) {
-      await supabase.from('goals').update(payload).eq('id', editId).eq('user_id', user.id)
+      const { error } = await supabase.from('savings_goals').update(payload).eq('id', editId).eq('user_id', user.id)
+      if (error) { toast.error(error.message); return; }
       toast.success('Goal updated!')
     } else {
       const maxP = goals.length > 0 ? Math.max(...goals.map(g => g.priority || 0)) : 0
-      await supabase.from('goals').insert([{ ...payload, user_id: user.id, priority: maxP + 1 }])
+      const { error } = await supabase.from('savings_goals').insert([{ ...payload, user_id: user.id, priority: maxP + 1 }])
+      if (error) { toast.error(error.message); return; }
       toast.success('Goal created!')
     }
     setModalOpen(false); setEditData(null); fetchGoals()
   }
 
-  const handleTopUp = async (amount) => {
-    if (!topUpGoal) return
-    const newAmount = (topUpGoal.current_amount || 0) + amount
-    checkMilestones(topUpGoal, newAmount)
-    const status = newAmount >= topUpGoal.target_amount ? 'completed' : topUpGoal.status
-    await supabase.from('goals').update({ current_amount: newAmount, status }).eq('id', topUpGoal.id)
-    await supabase.from('transactions').insert([{
-      user_id: user.id, date_time: new Date().toISOString(), type: 'expense',
-      amount, payment_method: 'bank', category: 'Goal Payment',
-      linked_goal_id: topUpGoal.id, note: `Goal: ${topUpGoal.name}`,
-      is_split: false, is_recurring: false, source: 'manual'
-    }])
-
-    toast.success(`₹${amount.toLocaleString('en-IN')} added to ${topUpGoal.name}!`)
-    setTopUpGoal(null); fetchGoals()
-  }
-
   const togglePause = async (goal) => {
     const newStatus = goal.status === 'paused' ? 'active' : 'paused'
-    await supabase.from('goals').update({ status: newStatus }).eq('id', goal.id)
+    await supabase.from('savings_goals').update({ status: newStatus }).eq('id', goal.id)
     toast.success(newStatus === 'paused' ? 'Goal paused' : 'Goal resumed')
     fetchGoals()
   }
 
   const archiveGoal = async (goal) => {
-    await supabase.from('goals').update({ status: 'archived' }).eq('id', goal.id)
+    await supabase.from('savings_goals').update({ status: 'archived' }).eq('id', goal.id)
     toast.success('Goal archived')
     fetchGoals()
   }
 
   const completeGoal = async (goal) => {
-    await supabase.from('goals').update({ status: 'completed' }).eq('id', goal.id)
+    await supabase.from('savings_goals').update({ status: 'completed' }).eq('id', goal.id)
     confetti({ particleCount: 200, spread: 90, origin: { y: 0.5 } })
     toast.success(`🎉 ${goal.name} completed!`, { duration: 5000 })
     fetchGoals()
@@ -399,7 +501,7 @@ export default function Goals() {
     const [moved] = reordered.splice(oldIndex, 1)
     reordered.splice(newIndex, 0, moved)
     for (let i = 0; i < reordered.length; i++) {
-      await supabase.from('goals').update({ priority: i + 1 }).eq('id', reordered[i].id)
+      await supabase.from('savings_goals').update({ priority: i + 1 }).eq('id', reordered[i].id)
     }
     fetchGoals()
   }
@@ -490,10 +592,10 @@ export default function Goals() {
 
       <GoalModal isOpen={modalOpen} onClose={() => { setModalOpen(false); setEditData(null) }}
         onSubmit={handleSubmit} editData={editData} />
-      <TopUpModal isOpen={!!topUpGoal} onClose={() => setTopUpGoal(null)}
-        onSubmit={handleTopUp} goal={topUpGoal} />
+      <PayGoalModal isOpen={!!topUpGoal} onClose={() => setTopUpGoal(null)}
+        onSuccess={fetchGoals} goal={topUpGoal} />
       <GoalDetailModal isOpen={!!detailGoal} onClose={() => setDetailGoal(null)}
-        goal={detailGoal} transactions={transactions} theme={theme} />
+        goal={detailGoal} transactions={[]} theme={theme} />
     </div>
   )
 }

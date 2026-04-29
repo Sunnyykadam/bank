@@ -10,7 +10,7 @@ import {
 import { 
   User, Phone, Banknote, Landmark, 
   Lock, LogOut, Shield, Save, Download, 
-  Wallet, TrendingUp, History, FileText
+  Wallet, TrendingUp, History, FileText, PiggyBank
 } from 'lucide-react';
 import { exportTransactionsCSV, exportGoalsCSV } from '../lib/exportCSV';
 import { exportTransactionsPDF } from '../lib/exportPDF';
@@ -21,7 +21,15 @@ export default function Profile() {
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [netWorthHistory, setNetWorthHistory] = useState([]);
-  
+  const [snapshot, setSnapshot] = useState(null);
+
+  // Savings section state
+  const [savingsTx, setSavingsTx] = useState([]);
+  const [savingsTxLoading, setSavingsTxLoading] = useState(true);
+  const [savingsPage, setSavingsPage] = useState(0);
+  const [savingsHasMore, setSavingsHasMore] = useState(false);
+  const SAVINGS_PAGE_SIZE = 20;
+
   const [infoForm, setInfoForm] = useState({
     name: '', phone: '', age: ''
   });
@@ -47,6 +55,15 @@ export default function Profile() {
     }
   }, [profile]);
 
+  // Fetch net worth from RPC
+  const fetchSnapshot = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await supabase.rpc('get_financial_snapshot', { p_user_id: user.id });
+    if (!error && data) setSnapshot(data);
+  }, [user]);
+
+  useEffect(() => { fetchSnapshot(); }, [fetchSnapshot]);
+
   const fetchNetWorthHistory = useCallback(async () => {
     if (!user) return;
     setHistoryLoading(true);
@@ -61,7 +78,47 @@ export default function Profile() {
 
   useEffect(() => { fetchNetWorthHistory(); }, [fetchNetWorthHistory]);
 
-  const handleUpdateInfo = async (e: React.FormEvent) => {
+  // Fetch savings transactions with goal titles
+  const fetchSavingsTx = useCallback(async (page = 0) => {
+    if (!user) return;
+    setSavingsTxLoading(true);
+    const from = page * SAVINGS_PAGE_SIZE;
+    const to = from + SAVINGS_PAGE_SIZE - 1;
+
+    const { data, count } = await supabase
+      .from('goal_transactions')
+      .select('*, goals:goal_id(name, icon)', { count: 'exact' })
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    let txData = data || [];
+
+    // Fallback: if join returned null for goals, fetch separately
+    if (txData.length > 0 && !txData[0].goals) {
+      const goalIds = [...new Set(txData.map(t => t.goal_id))];
+      const { data: goalsData } = await supabase
+        .from('savings_goals')
+        .select('id, name, icon')
+        .in('id', goalIds);
+
+      const goalMap = {};
+      (goalsData || []).forEach(g => { goalMap[g.id] = g; });
+      txData = txData.map(t => ({ ...t, goals: goalMap[t.goal_id] || null }));
+    }
+
+    if (page === 0) {
+      setSavingsTx(txData);
+    } else {
+      setSavingsTx(prev => [...prev, ...txData]);
+    }
+    setSavingsHasMore((count || 0) > (page + 1) * SAVINGS_PAGE_SIZE);
+    setSavingsTxLoading(false);
+  }, [user]);
+
+  useEffect(() => { fetchSavingsTx(0); }, [fetchSavingsTx]);
+
+  const handleUpdateInfo = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
@@ -73,14 +130,14 @@ export default function Profile() {
       if (error) throw error;
       toast.success('Profile updated!');
       refreshProfile();
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdateBalances = async (e: React.FormEvent) => {
+  const handleUpdateBalances = async (e) => {
     e.preventDefault();
     const cash = Number(balanceForm.cash_balance);
     const bank = Number(balanceForm.bank_balance);
@@ -105,10 +162,13 @@ export default function Profile() {
         user_id: user?.id, net_worth: nw
       }]);
 
+      // Refresh snapshot after balance update
+      fetchSnapshot();
+
       toast.success('Balances updated!');
       refreshProfile();
       fetchNetWorthHistory();
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message);
     } finally {
       setLoading(false);
@@ -121,24 +181,30 @@ export default function Profile() {
       const { error } = await supabase.auth.resetPasswordForEmail(user.email);
       if (error) throw error;
       toast.success('Password reset email sent!');
-    } catch (err: any) {
+    } catch (err) {
       toast.error(err.message);
     }
   };
 
-  const netWorth = balanceForm.cash_balance + balanceForm.bank_balance - balanceForm.liabilities;
+  // Net worth values from RPC snapshot
+  const cashVal = snapshot ? Number(snapshot.cash_balance) || 0 : balanceForm.cash_balance;
+  const bankVal = snapshot ? Number(snapshot.bank_balance) || 0 : balanceForm.bank_balance;
+  const savingsVal = snapshot ? Number(snapshot.savings_balance) || 0 : 0;
+  const loanGiven = snapshot ? Number(snapshot.loans_receivable) || 0 : 0;
+  const loanTaken = snapshot ? Number(snapshot.loans_payable) || 0 : 0;
+  const netWorth = snapshot ? Number(snapshot.net_worth) || 0 : (cashVal + bankVal - balanceForm.liabilities);
 
-  const chartData = netWorthHistory.map((h: any) => ({
+  const chartData = netWorthHistory.map((h) => ({
     date: format(new Date(h.recorded_at), 'MMM d'),
     value: h.net_worth
   }));
 
-  const handleExport = async (type: 'csv' | 'pdf' | 'goals') => {
+  const handleExport = async (type) => {
     if (!user) return;
     setLoading(true);
     try {
       if (type === 'goals') {
-        const { data } = await supabase.from('goals').select('*').eq('user_id', user.id);
+        const { data } = await supabase.from('savings_goals').select('*').eq('user_id', user.id);
         if (data?.length) exportGoalsCSV(data);
         else toast.error('No data found');
       } else {
@@ -169,6 +235,32 @@ export default function Profile() {
         .nw-badge { background: rgba(255,255,255,0.15); padding: 12px 20px; border-radius: 16px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
         .config-card { background: var(--color-card); border-radius: 20px; border: 1px solid var(--color-border); padding: 24px; margin-bottom: 20px; }
         .section-title { font-size: 14px; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 1px; font-weight: 800; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+
+        /* Net Worth Breakdown Card */
+        .nw-card { background: var(--color-card); border-radius: 10px; border: 0.5px solid var(--color-border); padding: 16px 18px; margin-bottom: 20px; }
+        .nw-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .nw-card-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: var(--color-text-secondary); }
+        .nw-card-value { font-size: 22px; font-weight: 800; }
+        .nw-rows { display: flex; flex-direction: column; gap: 0; }
+        .nw-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 0.5px solid var(--color-border); }
+        .nw-row:last-child { border-bottom: none; }
+        .nw-row-label { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--color-text-secondary); display: flex; align-items: center; gap: 8px; }
+        .nw-row-label-dot { width: 3px; height: 16px; border-radius: 2px; }
+        .nw-row-value { font-size: 13px; font-weight: 700; }
+        .nw-formula { font-size: 11px; color: var(--color-text-secondary); opacity: 0.7; text-align: center; margin-top: 12px; line-height: 1.6; }
+
+        /* Savings History */
+        .savings-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .savings-total { font-size: 14px; font-weight: 700; color: #22c55e; }
+        .savings-tx-row { display: flex; justify-content: space-between; align-items: flex-start; padding: 12px 0; border-bottom: 0.5px solid var(--color-border); }
+        .savings-tx-row:last-child { border-bottom: none; }
+        .savings-tx-left { display: flex; flex-direction: column; gap: 4px; }
+        .savings-tx-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+        .savings-tx-goal { font-size: 13px; font-weight: 700; }
+        .savings-tx-note { font-size: 11px; color: var(--color-text-secondary); font-style: italic; }
+        .savings-tx-amount { font-size: 13px; font-weight: 700; color: #22c55e; }
+        .savings-tx-date { font-size: 11px; color: var(--color-text-secondary); }
+        .savings-method-pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; margin-top: 2px; }
       `}</style>
 
       <div className="profile-hero">
@@ -227,6 +319,113 @@ export default function Profile() {
             </button>
           </form>
         </div>
+      </div>
+
+      {/* ══════ Net Worth Breakdown Card (Part 2) ══════ */}
+      <div className="nw-card">
+        <div className="nw-card-header">
+          <span className="nw-card-label">Net Worth</span>
+          <span className="nw-card-value" style={{ color: netWorth >= 0 ? '#22c55e' : '#ef4444' }}>
+            ₹{netWorth.toLocaleString('en-IN')}
+          </span>
+        </div>
+        <div className="nw-rows">
+          <div className="nw-row">
+            <span className="nw-row-label">
+              <span className="nw-row-label-dot" style={{ background: '#22c55e' }} />
+              Cash
+            </span>
+            <span className="nw-row-value">₹{cashVal.toLocaleString('en-IN')}</span>
+          </div>
+          <div className="nw-row">
+            <span className="nw-row-label">
+              <span className="nw-row-label-dot" style={{ background: '#3b82f6' }} />
+              Bank
+            </span>
+            <span className="nw-row-value">₹{bankVal.toLocaleString('en-IN')}</span>
+          </div>
+          <div className="nw-row">
+            <span className="nw-row-label">
+              <span className="nw-row-label-dot" style={{ background: '#8b5cf6' }} />
+              Savings
+            </span>
+            <span className="nw-row-value" style={{ color: '#8b5cf6' }}>₹{savingsVal.toLocaleString('en-IN')}</span>
+          </div>
+          <div className="nw-row">
+            <span className="nw-row-label">
+              <span className="nw-row-label-dot" style={{ background: '#22c55e' }} />
+              Loan Given
+            </span>
+            <span className="nw-row-value" style={{ color: '#22c55e' }}>+₹{loanGiven.toLocaleString('en-IN')}</span>
+          </div>
+          <div className="nw-row">
+            <span className="nw-row-label">
+              <span className="nw-row-label-dot" style={{ background: '#ef4444' }} />
+              Loan Taken
+            </span>
+            <span className="nw-row-value" style={{ color: '#ef4444' }}>−₹{loanTaken.toLocaleString('en-IN')}</span>
+          </div>
+        </div>
+        <div className="nw-formula">
+          Net Worth = Cash + Bank + Savings<br />+ Loan Given − Loan Taken
+        </div>
+      </div>
+
+      {/* ══════ Savings History Card (Part 4) ══════ */}
+      <div className="nw-card">
+        <div className="savings-header">
+          <span className="nw-card-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <PiggyBank size={16} /> Savings History
+          </span>
+          <span className="savings-total">Total: ₹{savingsVal.toLocaleString('en-IN')}</span>
+        </div>
+
+        {savingsTxLoading && savingsTx.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 24, opacity: 0.5 }}>Loading savings history...</div>
+        ) : savingsTx.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 24, opacity: 0.6 }}>
+            No savings yet — contribute to a goal to see history here
+          </div>
+        ) : (
+          <>
+            {savingsTx.map(tx => {
+              const goalInfo = tx.goals || {};
+              return (
+                <div key={tx.id} className="savings-tx-row">
+                  <div className="savings-tx-left">
+                    <div className="savings-tx-goal">
+                      🎯 {goalInfo.name || 'Goal'}
+                    </div>
+                    {tx.note && <div className="savings-tx-note">{tx.note}</div>}
+                    <span className="savings-method-pill" style={{
+                      background: tx.payment_method === 'cash' ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.15)',
+                      color: tx.payment_method === 'cash' ? '#f59e0b' : '#3b82f6'
+                    }}>
+                      {tx.payment_method}
+                    </span>
+                  </div>
+                  <div className="savings-tx-right">
+                    <div className="savings-tx-amount">+₹{Number(tx.amount).toLocaleString('en-IN')}</div>
+                    <div className="savings-tx-date">{format(new Date(tx.created_at), 'MMM d, HH:mm')}</div>
+                  </div>
+                </div>
+              );
+            })}
+            {savingsHasMore && (
+              <button
+                className="btn btn-ghost btn-full"
+                style={{ marginTop: 12, fontSize: 12 }}
+                onClick={() => {
+                  const nextPage = savingsPage + 1;
+                  setSavingsPage(nextPage);
+                  fetchSavingsTx(nextPage);
+                }}
+              >
+                Load more
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {/* Net Worth Chart */}
